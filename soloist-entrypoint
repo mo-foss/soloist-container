@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+: "${SOLOIST_API_KEY:?Set SOLOIST_API_KEY to a Spotify Soloist API key}"
+
+device_name=${SOLOIST_DEVICE_NAME:-Soloist}
+data_dir=${SOLOIST_DATA_DIR:-/data}
+cache_dir=${SOLOIST_CACHE_DIR:-/tmp/soloist-cache}
+
+mkdir -p "$data_dir" "$cache_dir"
+
+if [ -n "${SOLOIST_WS:-}" ]; then
+    set -- --ws "$SOLOIST_WS" "$@"
+fi
+
+exec /usr/local/bin/soloist \
+    --device-name "$device_name" \
+    --data-dir "$data_dir" \
+    --cache-dir "$cache_dir" \
+    --api-key "$SOLOIST_API_KEY" \
+    "$@"

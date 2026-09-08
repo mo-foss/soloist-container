@@ -1,0 +1,86 @@
+name: Build and publish container
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Determine image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Determine Soloist version
+        id: soloist
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(docker run --rm debian:trixie-slim sh -ceu '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends ca-certificates curl tar >/dev/null
+            workdir="$(mktemp -d)"
+            trap "rm -rf \"$workdir\"" EXIT
+            curl --fail --location --silent --show-error \
+              https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz \
+              --output "$workdir/soloist.tar.gz"
+            tar -xzf "$workdir/soloist.tar.gz" -C "$workdir"
+            "$workdir/soloist" --version | awk "NR == 1 { print \$2; exit }"
+          ')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Soloist version: $version"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+            type=raw,value=soloist-${{ steps.soloist.outputs.version }}
+            type=sha,prefix=sha-
+            type=ref,event=tag
+          labels: |
+            org.opencontainers.image.title=Spotify Soloist container
+            org.opencontainers.image.description=Alpine-based Spotify Soloist runtime
+            org.opencontainers.image.version=${{ steps.soloist.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

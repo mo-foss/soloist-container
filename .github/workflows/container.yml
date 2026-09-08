@@ -35,7 +35,7 @@ jobs:
           version="$(docker run --rm debian:trixie-slim sh -ceu '
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends ca-certificates curl tar >/dev/null
+            apt-get install -y -qq --no-install-recommends ca-certificates curl libatomic1 tar >/dev/null
             workdir="$(mktemp -d)"
             trap "rm -rf \"$workdir\"" EXIT
             curl --fail --location --silent --show-error \
